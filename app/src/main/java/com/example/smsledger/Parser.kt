@@ -9,7 +9,7 @@ data class Txn(
 
 object Parser {
     private val I = RegexOption.IGNORE_CASE
-    private val CUR = Regex("""(?:rs\.?|inr|₹|usd|\$)\s*([\d,]+(?:\.\d+)?)""", I)
+    private val CUR = Regex("""(?:rs\.?|inr|₹|usd|\$)\s*(\d[\d,]*(?:\.\d+)?)""", I)
     private val OTP = Regex("""\botp\b|one.time password""", I)
     private val PROMO = Regex("""offer|loan|apply|eligible|pre-?approved|congrat|click|reward points|expires|\bwin\b|enhanced|upgrade|cashback up to""", I)
     private val DEBIT = Regex("""debited|spent|withdrawn|paid|purchase|sent""", I)
@@ -58,7 +58,11 @@ object Parser {
         return (ok ?: fb).toString()
     }
 
-    fun parse(sms: String, fallback: LocalDate = LocalDate.now()): Txn? {
+    /** A message that cannot be parsed is skipped; it must never stop the whole import. */
+    fun parse(sms: String, fallback: LocalDate = LocalDate.now()): Txn? =
+        try { parseInner(sms, fallback) } catch (e: Exception) { null }
+
+    private fun parseInner(sms: String, fallback: LocalDate): Txn? {
         val t = sms.replace(Regex("\\s+"), " ").trim()
         if (t.isEmpty() || OTP.containsMatchIn(t) || PROMO.containsMatchIn(t)) return null
         val cut = BAL.find(t)?.range?.first ?: -1
