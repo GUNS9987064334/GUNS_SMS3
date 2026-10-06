@@ -33,8 +33,9 @@ class MainActivity : Activity() {
             text = label; textSize = 12f; setOnClickListener { onClick() }
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        bar.addView(btn("Import inbox") { importInbox() })
-        bar.addView(btn("Share CSV") { shareCsv() })
+        bar.addView(btn("Import") { importInbox() })
+        bar.addView(btn("Excel") { openExcel() })
+        bar.addView(btn("CSV") { shareCsv() })
         bar.addView(btn("Clear") { confirmClear() })
         list = ListView(this).apply { emptyView = TextView(context).apply { text = "No transactions yet. New bank SMS appear here automatically, or tap Import inbox." } }
         root.addView(totals); root.addView(bar); root.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -110,6 +111,16 @@ class MainActivity : Activity() {
         val added = Store.add(this, found, dedupe = true)
         if (!silent) Toast.makeText(this, "Imported $added new transactions", Toast.LENGTH_LONG).show()
         if (added > 0) refresh()
+    }
+
+    // Saves SMS_Transactions.xlsx in Downloads (it is also updated automatically) and tries to open it.
+    private fun openExcel() {
+        val uri = Exporter.export(this, Store.all(this))
+        if (uri == null) { Toast.makeText(this, "Could not save the Excel file", Toast.LENGTH_LONG).show(); return }
+        Toast.makeText(this, "Saved in Downloads: " + Exporter.NAME, Toast.LENGTH_LONG).show()
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, Exporter.MIME).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (e: Exception) { }
     }
 
     private fun shareCsv() {

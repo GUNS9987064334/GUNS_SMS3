@@ -27,6 +27,7 @@ object Store {
                 .put("balance", it.balance ?: JSONObject.NULL).put("raw", it.raw))
         }
         prefs(c).edit().putString("txns", a.toString()).apply()
+        Exporter.export(c, l) // keep the Excel file in step with every change
     }
 
     /** dedupe = true skips messages already stored (used when importing the inbox). */
@@ -35,7 +36,7 @@ object Store {
         val seen = l.map { it.raw }.toHashSet()
         var n = 0
         for (t in items) if (!dedupe || seen.add(t.raw)) { l.add(t); n++ }
-        write(c, l)
+        if (n > 0) write(c, l)
         return n
     }
 
