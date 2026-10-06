@@ -43,7 +43,8 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 1)
     }
 
-    override fun onResume() { super.onResume(); refresh() }
+    // Opening the app also syncs the newest messages, so nothing is missed if the phone blocked the background capture.
+    override fun onResume() { super.onResume(); importInbox(true); refresh() }
 
     private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
@@ -74,27 +75,30 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun importInbox() {
+    private fun importInbox(silent: Boolean = false) {
         if (!has(Manifest.permission.READ_SMS)) {
-            Toast.makeText(this, "Allow SMS access first", Toast.LENGTH_SHORT).show()
-            requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 1); return
+            if (!silent) {
+                Toast.makeText(this, "Allow SMS access first", Toast.LENGTH_SHORT).show()
+                requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 1)
+            }
+            return
         }
         val found = mutableListOf<Txn>()
         try {
         contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("body", "date"), null, null, "date DESC")?.use { c ->
             var n = 0
-            while (c.moveToNext() && n++ < 3000) {
+            while (c.moveToNext() && n++ < (if (silent) 300 else 3000)) {
                 val day = Instant.ofEpochMilli(c.getLong(1)).atZone(ZoneId.systemDefault()).toLocalDate()
                 Parser.parse(c.getString(0) ?: "", day)?.let { found.add(it) }
             }
         }
         } catch (e: Exception) {
-            Toast.makeText(this, "Could not read SMS: " + e.javaClass.simpleName + " " + e.message, Toast.LENGTH_LONG).show()
+            if (!silent) Toast.makeText(this, "Could not read SMS: " + e.javaClass.simpleName + " " + e.message, Toast.LENGTH_LONG).show()
             return
         }
         val added = Store.add(this, found, dedupe = true)
-        Toast.makeText(this, "Imported $added new transactions", Toast.LENGTH_LONG).show()
-        refresh()
+        if (!silent) Toast.makeText(this, "Imported $added new transactions", Toast.LENGTH_LONG).show()
+        if (added > 0) refresh()
     }
 
     private fun shareCsv() {
