@@ -30,12 +30,13 @@ class MainActivity : Activity() {
         totals = TextView(this).apply { textSize = 16f; setPadding(0, 0, 0, pad / 2) }
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         fun btn(label: String, onClick: () -> Unit) = Button(this).apply {
-            text = label; textSize = 12f; setOnClickListener { onClick() }
+            text = label; textSize = 11f; minWidth = 0; minimumWidth = 0; setOnClickListener { onClick() }
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         bar.addView(btn("Import") { importInbox() })
         bar.addView(btn("Excel") { openExcel() })
         bar.addView(btn("CSV") { shareCsv() })
+        bar.addView(btn("Sheet") { sheetDialog() })
         bar.addView(btn("Clear") { confirmClear() })
         list = ListView(this).apply { emptyView = TextView(context).apply { text = "No transactions yet. New bank SMS appear here automatically, or tap Import inbox." } }
         root.addView(totals); root.addView(bar); root.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -56,7 +57,7 @@ class MainActivity : Activity() {
     }
 
     // Opening the app also syncs the newest messages, so nothing is missed if the phone blocked the background capture.
-    override fun onResume() { super.onResume(); startCapture(); importInbox(true); refresh() }
+    override fun onResume() { super.onResume(); startCapture(); importInbox(true); Uploader.flushAsync(this); refresh() }
 
     private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
@@ -122,6 +123,38 @@ class MainActivity : Activity() {
         try {
             startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, Exporter.MIME).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
         } catch (e: Exception) { }
+    }
+
+    // Father's setup: paste the Google Sheet web app URL and the secret word.
+    private fun sheetDialog() {
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        val cfg = getSharedPreferences("cfg", 0)
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(pad, pad / 2, pad, 0) }
+        val url = EditText(this).apply {
+            hint = "Google Sheet web app URL"; setText(cfg.getString("url", "")); setSingleLine()
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val tok = EditText(this).apply { hint = "Secret word"; setText(cfg.getString("token", "")); setSingleLine() }
+        val info = TextView(this).apply { text = Uploader.status(this@MainActivity); setPadding(0, pad / 2, 0, 0) }
+        box.addView(url); box.addView(tok); box.addView(info)
+        AlertDialog.Builder(this).setTitle("Send to Google Sheet").setView(box)
+            .setPositiveButton("Save") { _, _ -> saveSheet(url.text.toString(), tok.text.toString(), false) }
+            .setNeutralButton("Save + send old") { _, _ -> saveSheet(url.text.toString(), tok.text.toString(), true) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun saveSheet(url: String, token: String, sendOld: Boolean) {
+        getSharedPreferences("cfg", 0).edit().putString("url", url.trim()).putString("token", token.trim()).apply()
+        Uploader.test(this) { res ->
+            runOnUiThread {
+                Toast.makeText(this, when (res) {
+                    "ok" -> "Connected. New transactions will go to the sheet."
+                    "forbidden" -> "Wrong secret word"
+                    else -> "Could not connect: $res"
+                }, Toast.LENGTH_LONG).show()
+            }
+            if (res == "ok") { if (sendOld) Uploader.enqueue(this, Store.all(this)) else Uploader.flushAsync(this) }
+        }
     }
 
     private fun shareCsv() {

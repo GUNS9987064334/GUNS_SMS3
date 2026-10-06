@@ -36,8 +36,9 @@ object Store {
         val seen = l.map { it.raw }.toHashSet()
         var n = 0
         var changed = false
+        val added = mutableListOf<Txn>()
         for (t in items) {
-            if (!dedupe || seen.add(t.raw)) { l.add(t); n++ }
+            if (!dedupe || seen.add(t.raw)) { l.add(t); added.add(t); n++ }
             else if (t.time.isNotEmpty()) {
                 // an older entry saved without a time: fill it in from the inbox message
                 val i = l.indexOfFirst { it.raw == t.raw && it.time.isEmpty() }
@@ -45,6 +46,7 @@ object Store {
             }
         }
         if (n > 0 || changed) write(c, l)
+        if (added.isNotEmpty()) Uploader.enqueue(c, added)
         return n
     }
 

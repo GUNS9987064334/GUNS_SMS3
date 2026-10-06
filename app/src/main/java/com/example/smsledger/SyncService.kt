@@ -7,6 +7,8 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.database.ContentObserver
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -24,6 +26,14 @@ class SyncService : Service() {
         }
     }
 
+    // Sends anything waiting for the Google Sheet: every 10 minutes and whenever the internet comes back.
+    private val tick = object : Runnable {
+        override fun run() { Uploader.flushAsync(applicationContext); handler.postDelayed(this, 10 * 60 * 1000L) }
+    }
+    private val net = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(n: Network) { Uploader.flushAsync(applicationContext) }
+    }
+
     override fun onBind(i: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -38,11 +48,15 @@ class SyncService : Service() {
         else startForeground(1, n)
         try { contentResolver.registerContentObserver(Uri.parse("content://sms"), true, observer) } catch (e: Exception) {}
         handler.post(syncNow)
+        handler.post(tick)
+        try { getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(net) } catch (e: Exception) {}
     }
 
     override fun onStartCommand(i: Intent?, f: Int, s: Int) = START_STICKY
 
     override fun onDestroy() {
+        handler.removeCallbacks(tick)
+        try { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(net) } catch (e: Exception) {}
         try { contentResolver.unregisterContentObserver(observer) } catch (e: Exception) {}
         super.onDestroy()
     }
