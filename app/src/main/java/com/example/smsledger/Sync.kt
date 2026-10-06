@@ -16,8 +16,9 @@ object Sync {
             ctx.contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("body", "date"), null, null, "date DESC")?.use { c ->
                 var n = 0
                 while (c.moveToNext() && n++ < limit) {
-                    val day = Instant.ofEpochMilli(c.getLong(1)).atZone(ZoneId.systemDefault()).toLocalDate()
-                    Parser.parse(c.getString(0) ?: "", day)?.let { found.add(it) }
+                    val ms = c.getLong(1)
+                    val day = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate()
+                    Parser.parse(c.getString(0) ?: "", day, ms)?.let { found.add(it) }
                 }
             }
         } catch (e: Exception) { return 0 }

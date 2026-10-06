@@ -61,7 +61,7 @@ class MainActivity : Activity() {
     private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
     private fun refresh() {
-        items = Store.all(this).sortedByDescending { it.date }
+        items = Store.all(this).sortedWith(compareByDescending<Txn> { it.date }.thenByDescending { it.time })
         val spent = items.filter { it.type == "debit" }.sumOf { it.amount }
         val got = items.filter { it.type == "credit" }.sumOf { it.amount }
         totals.text = "Spent ${money(spent)}\nReceived ${money(got)}"
@@ -75,7 +75,7 @@ class MainActivity : Activity() {
                     setTextColor(if (t.type == "debit") Color.parseColor("#B3402F") else Color.parseColor("#1C7A58"))
                 }
                 row.findViewById<TextView>(android.R.id.text2).text =
-                    listOf(t.date, t.category, if (t.account.isEmpty()) "" else "XX" + t.account).filter { it.isNotEmpty() }.joinToString("  •  ")
+                    listOf(t.date, Parser.pretty(t.time), t.category, if (t.account.isEmpty()) "" else "XX" + t.account).filter { it.isNotEmpty() }.joinToString("  •  ")
                 return row
             }
         }
@@ -100,8 +100,9 @@ class MainActivity : Activity() {
         contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("body", "date"), null, null, "date DESC")?.use { c ->
             var n = 0
             while (c.moveToNext() && n++ < (if (silent) 300 else 3000)) {
-                val day = Instant.ofEpochMilli(c.getLong(1)).atZone(ZoneId.systemDefault()).toLocalDate()
-                Parser.parse(c.getString(0) ?: "", day)?.let { found.add(it) }
+                val ms = c.getLong(1)
+                val day = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate()
+                Parser.parse(c.getString(0) ?: "", day, ms)?.let { found.add(it) }
             }
         }
         } catch (e: Exception) {

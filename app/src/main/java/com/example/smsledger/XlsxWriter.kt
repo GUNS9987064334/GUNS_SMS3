@@ -18,8 +18,8 @@ object XlsxWriter {
 
     private const val WORKBOOK_RELS = HEAD + """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"""
 
-    // Styles: 0 normal, 1 bold header, 2 amount (#,##0.00), 3 date (yyyy-mm-dd)
-    private const val STYLES = HEAD + """<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="yyyy\-mm\-dd"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"""
+    // Styles: 0 normal, 1 bold header, 2 amount (#,##0.00), 3 date (yyyy-mm-dd), 4 time (hh:mm AM/PM)
+    private const val STYLES = HEAD + """<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="yyyy\-mm\-dd"/><numFmt numFmtId="165" formatCode="hh:mm\ AM/PM"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"""
 
     private fun esc(s: String): String {
         val sb = StringBuilder()
@@ -38,6 +38,9 @@ object XlsxWriter {
     private fun text(c: Int, r: Int, v: String, s: Int = 0) =
         """<c r="${ref(c, r)}" t="inlineStr" s="$s"><is><t xml:space="preserve">${esc(v)}</t></is></c>"""
     private fun number(c: Int, r: Int, v: Double, s: Int) = """<c r="${ref(c, r)}" s="$s"><v>$v</v></c>"""
+    private fun dayFraction(t: String): Double? = try {
+        java.time.LocalTime.parse(t).toSecondOfDay() / 86400.0
+    } catch (e: Exception) { null }
     private fun serial(d: String): Double = try { (LocalDate.parse(d).toEpochDay() + 25569).toDouble() } catch (e: Exception) { 0.0 }
 
     private fun sheet(widths: List<Int>, rows: String): String {
@@ -46,22 +49,23 @@ object XlsxWriter {
     }
 
     fun build(txns: List<Txn>): ByteArray {
-        val sorted = txns.sortedByDescending { it.date }
+        val sorted = txns.sortedWith(compareByDescending<Txn> { it.date }.thenByDescending { it.time })
 
         // Sheet 1: every transaction
-        val heads = listOf("Date", "Type", "Amount", "Merchant", "Category", "Account", "Balance", "Original SMS")
+        val heads = listOf("Date", "Time", "Type", "Amount", "Merchant", "Category", "Account", "Balance", "Original SMS")
         val r1 = StringBuilder("""<row r="1">""" + heads.mapIndexed { i, h -> text(i, 1, h, 1) }.joinToString("") + "</row>")
         sorted.forEachIndexed { idx, t ->
             val r = idx + 2
             r1.append("""<row r="$r">""")
                 .append(number(0, r, serial(t.date), 3))
-                .append(text(1, r, if (t.type == "debit") "Debit" else "Credit"))
-                .append(number(2, r, t.amount, 2))
-                .append(text(3, r, t.merchant))
-                .append(text(4, r, t.category))
-                .append(text(5, r, if (t.account.isEmpty()) "" else "XX" + t.account))
-                .append(if (t.balance != null) number(6, r, t.balance, 2) else "")
-                .append(text(7, r, t.raw))
+                .append(dayFraction(t.time)?.let { number(1, r, it, 4) } ?: "")
+                .append(text(2, r, if (t.type == "debit") "Debit" else "Credit"))
+                .append(number(3, r, t.amount, 2))
+                .append(text(4, r, t.merchant))
+                .append(text(5, r, t.category))
+                .append(text(6, r, if (t.account.isEmpty()) "" else "XX" + t.account))
+                .append(if (t.balance != null) number(7, r, t.balance, 2) else "")
+                .append(text(8, r, t.raw))
                 .append("</row>")
         }
 
@@ -89,7 +93,7 @@ object XlsxWriter {
             put("xl/workbook.xml", WORKBOOK)
             put("xl/_rels/workbook.xml.rels", WORKBOOK_RELS)
             put("xl/styles.xml", STYLES)
-            put("xl/worksheets/sheet1.xml", sheet(listOf(12, 8, 14, 28, 14, 10, 14, 80), r1.toString()))
+            put("xl/worksheets/sheet1.xml", sheet(listOf(12, 11, 8, 14, 28, 14, 10, 14, 80), r1.toString()))
             put("xl/worksheets/sheet2.xml", sheet(listOf(12, 14, 14, 14, 14), r2.toString()))
         }
         return out.toByteArray()

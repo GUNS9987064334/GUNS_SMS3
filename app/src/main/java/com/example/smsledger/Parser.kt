@@ -4,7 +4,8 @@ import java.time.LocalDate
 
 data class Txn(
     val date: String, val type: String, val amount: Double, val merchant: String,
-    val account: String, val category: String, val balance: Double?, val raw: String
+    val account: String, val category: String, val balance: Double?, val raw: String,
+    val time: String = "" // time of day, HH:mm:ss (when the SMS arrived)
 )
 
 object Parser {
@@ -59,10 +60,18 @@ object Parser {
     }
 
     /** A message that cannot be parsed is skipped; it must never stop the whole import. */
-    fun parse(sms: String, fallback: LocalDate = LocalDate.now()): Txn? =
-        try { parseInner(sms, fallback) } catch (e: Exception) { null }
+    fun parse(sms: String, fallback: LocalDate = LocalDate.now(), timeMs: Long = System.currentTimeMillis()): Txn? =
+        try { parseInner(sms, fallback, timeMs) } catch (e: Exception) { null }
 
-    private fun parseInner(sms: String, fallback: LocalDate): Txn? {
+    private fun clock(ms: Long): String =
+        java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalTime().withNano(0).toString().let { if (it.length == 5) "$it:00" else it }
+
+    /** 24-hour "HH:mm:ss" to a friendly "02:35 PM". */
+    fun pretty(time: String): String = try {
+        java.time.LocalTime.parse(time).format(java.time.format.DateTimeFormatter.ofPattern("hh:mm a", java.util.Locale.ENGLISH))
+    } catch (e: Exception) { "" }
+
+    private fun parseInner(sms: String, fallback: LocalDate, timeMs: Long): Txn? {
         val t = sms.replace(Regex("\\s+"), " ").trim()
         if (t.isEmpty() || OTP.containsMatchIn(t) || PROMO.containsMatchIn(t)) return null
         val cut = BAL.find(t)?.range?.first ?: -1
@@ -80,6 +89,6 @@ object Parser {
         if (cat == "Other" && type == "debit" && Regex("upi|neft|imps|trf", I).containsMatchIn(t)) cat = "Transfer"
         return Txn(parseDate(t, fallback), type, amt, merchant.ifEmpty { "Unknown" },
             ACCT.find(t)?.groupValues?.get(1) ?: "", cat,
-            CUR.find(tail)?.groupValues?.get(1)?.let { num(it) }, t)
+            CUR.find(tail)?.groupValues?.get(1)?.let { num(it) }, t, clock(timeMs))
     }
 }

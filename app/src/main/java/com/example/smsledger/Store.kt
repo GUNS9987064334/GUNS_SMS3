@@ -14,7 +14,7 @@ object Store {
             val o = a.getJSONObject(i)
             l.add(Txn(o.getString("date"), o.getString("type"), o.getDouble("amount"), o.getString("merchant"),
                 o.getString("account"), o.getString("category"),
-                if (o.isNull("balance")) null else o.getDouble("balance"), o.getString("raw")))
+                if (o.isNull("balance")) null else o.getDouble("balance"), o.getString("raw"), o.optString("time", "")))
         }
         return l
     }
@@ -24,7 +24,7 @@ object Store {
         l.forEach {
             a.put(JSONObject().put("date", it.date).put("type", it.type).put("amount", it.amount)
                 .put("merchant", it.merchant).put("account", it.account).put("category", it.category)
-                .put("balance", it.balance ?: JSONObject.NULL).put("raw", it.raw))
+                .put("balance", it.balance ?: JSONObject.NULL).put("raw", it.raw).put("time", it.time))
         }
         prefs(c).edit().putString("txns", a.toString()).apply()
         Exporter.export(c, l) // keep the Excel file in step with every change
@@ -35,8 +35,16 @@ object Store {
         val l = all(c)
         val seen = l.map { it.raw }.toHashSet()
         var n = 0
-        for (t in items) if (!dedupe || seen.add(t.raw)) { l.add(t); n++ }
-        if (n > 0) write(c, l)
+        var changed = false
+        for (t in items) {
+            if (!dedupe || seen.add(t.raw)) { l.add(t); n++ }
+            else if (t.time.isNotEmpty()) {
+                // an older entry saved without a time: fill it in from the inbox message
+                val i = l.indexOfFirst { it.raw == t.raw && it.time.isEmpty() }
+                if (i >= 0) { l[i] = l[i].copy(time = t.time); changed = true }
+            }
+        }
+        if (n > 0 || changed) write(c, l)
         return n
     }
 
@@ -50,9 +58,9 @@ object Store {
 
     fun csv(c: Context): String {
         fun q(s: Any?) = "\"" + (s?.toString() ?: "").replace("\"", "\"\"") + "\""
-        val rows = all(c).sortedByDescending { it.date }.map {
-            listOf(it.date, it.type, it.amount, it.merchant, it.category, it.account, it.balance, it.raw).joinToString(",") { v -> q(v) }
+        val rows = all(c).sortedWith(compareByDescending<Txn> { it.date }.thenByDescending { it.time }).map {
+            listOf(it.date, Parser.pretty(it.time), it.type, it.amount, it.merchant, it.category, it.account, it.balance, it.raw).joinToString(",") { v -> q(v) }
         }
-        return (listOf("Date,Type,Amount,Merchant,Category,Account,Balance,Original SMS") + rows).joinToString("\n")
+        return (listOf("Date,Time,Type,Amount,Merchant,Category,Account,Balance,Original SMS") + rows).joinToString("\n")
     }
 }
