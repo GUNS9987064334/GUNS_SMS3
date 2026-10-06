@@ -40,11 +40,22 @@ class MainActivity : Activity() {
         root.addView(totals); root.addView(bar); root.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         if (!has(Manifest.permission.RECEIVE_SMS) || !has(Manifest.permission.READ_SMS))
-            requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS), 1)
+            requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS,
+                Manifest.permission.POST_NOTIFICATIONS), 1)
+    }
+
+    // Starts the background capture service (it shows a small ongoing notification).
+    private fun startCapture() {
+        if (has(Manifest.permission.READ_SMS))
+            try { startForegroundService(Intent(this, SyncService::class.java)) } catch (e: Exception) {}
+    }
+
+    override fun onRequestPermissionsResult(r: Int, p: Array<out String>, g: IntArray) {
+        startCapture(); importInbox(true); refresh()
     }
 
     // Opening the app also syncs the newest messages, so nothing is missed if the phone blocked the background capture.
-    override fun onResume() { super.onResume(); importInbox(true); refresh() }
+    override fun onResume() { super.onResume(); startCapture(); importInbox(true); refresh() }
 
     private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
 
